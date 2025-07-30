@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>مدیریت چت صوتی</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 10px; border: 1px solid #ddd; text-align: center; }
+        th { background-color: #f2f2f2; }
+        .active { color: green; }
+        .inactive { color: orange; }
+        .banned { color: red; font-weight: bold; }
+        .actions a { margin: 0 5px; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <h1>پنل مدیریت چت صوتی</h1>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>نام کاربری</th>
+                <th>وضعیت</th>
+                <th>آخرین اتصال</th>
+                <th>آدرس IP</th>
+                <th>عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr class="{% if user.is_banned %}banned{% elif user.is_active %}active{% else %}inactive{% endif %}">
+                <td>{{ user.user.username }}</td>
+                <td>
+                    {% if user.is_banned %}مسدود شده
+                    {% elif user.is_active %}فعال
+                    {% else %}غیرفعال{% endif %}
+                </td>
+                <td>{{ user.last_connection }}</td>
+                <td>{{ user.ip_address }}</td>
+                <td class="actions">
+                    {% if not user.is_banned %}
+                        {% if user.is_active %}
+                            <a href="{% url 'manage_user' user.id 'deactivate' %}">غیرفعال کردن</a>
+                        {% else %}
+                            <a href="{% url 'manage_user' user.id 'activate' %}">فعال کردن</a>
+                        {% endif %}
+                        <a href="{% url 'manage_user' user.id 'ban' %}">مسدود کردن</a>
+                    {% else %}
+                        <a href="{% url 'manage_user' user.id 'unban' %}">رفع مسدودیت</a>
+                    {% endif %}
+                    <a href="{% url 'manage_user' user.id 'delete' %}" 
+                       onclick="return confirm('آیا مطمئن هستید؟')">حذف کاربر</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <div style="margin-top: 30px;">
+        <h2>اتصال به چت صوتی</h2>
+        <a href="/ws/voice/room/" target="_blank">ورود به اتاق چت صوتی</a>
+    </div>
+</body>
+</html>
