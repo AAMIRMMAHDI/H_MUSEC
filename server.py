@@ -3,11 +3,11 @@ eventlet.monkey_patch()
 
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
+from flask import request  # اگر جایی خواستی استفاده کنی، ولی الان لازم نیست
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
-# لیست کاربران ارسال کننده و گیرنده
 senders = set()
 receivers = set()
 
@@ -16,33 +16,31 @@ def index():
     return render_template("index.html", senders=list(senders), receivers=list(receivers))
 
 @socketio.on("connect")
-def handle_connect():
-    print(f"Client connected: {request.sid}")
+def handle_connect(sid, environ):
+    print(f"Client connected: {sid}")
 
 @socketio.on("disconnect")
-def handle_disconnect():
-    sid = request.sid
+def handle_disconnect(sid):
+    print(f"Client disconnected: {sid}")
     if sid in senders:
         senders.remove(sid)
     if sid in receivers:
         receivers.remove(sid)
-    # آپدیت صفحه به همه
     socketio.emit("update_users", {"senders": list(senders), "receivers": list(receivers)})
 
 @socketio.on("register_sender")
-def register_sender():
-    senders.add(request.sid)
-    # بروز رسانی به همه
+def register_sender(sid):
+    senders.add(sid)
     socketio.emit("update_users", {"senders": list(senders), "receivers": list(receivers)})
 
 @socketio.on("register_receiver")
-def register_receiver():
-    receivers.add(request.sid)
+def register_receiver(sid):
+    receivers.add(sid)
     socketio.emit("update_users", {"senders": list(senders), "receivers": list(receivers)})
 
 @socketio.on("audio")
-def handle_audio(data):
-    # پخش صوت به همه گیرنده ها
+def handle_audio(data, sid):
+    # ارسال داده صوت به گیرنده‌ها
     for r_sid in receivers:
         emit("audio", data, room=r_sid)
 
