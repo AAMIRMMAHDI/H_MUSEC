@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>صفحه مدیریت صوت</title>
+    <style>
+        body { font-family: Tahoma, sans-serif; background: #f4f6f8; color: #333; padding: 20px; }
+        h1 { color: #005f99; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #007acc; color: white; }
+        tr:nth-child(even) { background-color: #e9f1fb; }
+        tr:hover { background-color: #c7e0f4; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 8px rgba(0,0,0,0.1); }
+        .footer { margin-top: 40px; text-align: center; color: #666; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>کاربران فعال ارسال صدا و دریافت صدا</h1>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>کاربران ارسال کننده صدا (Senders)</th>
+                    <th>کاربران دریافت کننده صدا (Receivers)</th>
+                </tr>
+            </thead>
+            <tbody id="users-table">
+                <tr>
+                    <td colspan="2">درحال دریافت اطلاعات ...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+<script src="//cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
+<script>
+    const socket = io();
+
+    // آپدیت جدول کاربران
+    function updateUsers(data) {
+        const tbody = document.getElementById('users-table');
+        tbody.innerHTML = '';
+
+        const maxLen = Math.max(data.senders.length, data.receivers.length);
+
+        if(maxLen === 0){
+            tbody.innerHTML = `<tr><td colspan="2">هیچ کاربری متصل نیست</td></tr>`;
+            return;
+        }
+
+        for(let i=0; i<maxLen; i++) {
+            const sender = data.senders[i] || '-';
+            const receiver = data.receivers[i] || '-';
+
+            tbody.innerHTML += `
+                <tr>
+                    <td>${sender}</td>
+                    <td>${receiver}</td>
+                </tr>`;
+        }
+    }
+
+    socket.on('update_users', updateUsers);
+
+    // درخواست بروزرسانی پس از اتصال
+    socket.on('connect', () => {
+        console.log("Connected to server");
+        // فقط برای نمایش اینجا فراخوانی میکنیم
+        socket.emit('register_receiver'); // فرض میکنیم این صفحه فقط گیرنده است
+    });
+</script>
+
+<div class="footer">© ۲۰۲۵ ساخته شده توسط Amir Mahdi</div>
+</body>
+</html>
