@@ -1,23 +1,19 @@
-import asyncio
-import websockets
+from flask import Flask
+from flask_socketio import SocketIO, emit
+import eventlet
 
-clients = set()
+eventlet.monkey_patch()
 
-async def handler(websocket):
-    clients.add(websocket)
-    try:
-        async for data in websocket:
-            for client in clients:
-                if client != websocket:
-                    await client.send(data)
-    except:
-        pass
-    finally:
-        clients.remove(websocket)
+app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-async def main():
-    async with websockets.serve(handler, "0.0.0.0", 10000):
-        print("✅ WebSocket server is running...")
-        await asyncio.Future()
+@app.route('/')
+def index():
+    return '🔊 Audio relay server is running!'
 
-asyncio.run(main())
+@socketio.on('audio')
+def handle_audio(data):
+    emit('audio', data, broadcast=True, include_self=False)
+
+if __name__ == '__main__':
+    socketio.run(app, host="0.0.0.0", port=5000)
