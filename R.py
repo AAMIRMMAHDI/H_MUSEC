@@ -1,12 +1,31 @@
-import sounddevice as sd
 import socketio
+import sounddevice as sd
+import numpy as np
+import queue
+import threading
 
 sio = socketio.Client()
-RATE = 44100
-CHANNELS = 1
-CHUNK = 1024
 
-audio_buffer = bytearray()
+SAMPLE_RATE = 44100
+CHANNELS = 1
+FRAMES_PER_BUFFER = 1024
+
+audio_queue = queue.Queue()
+
+def audio_playback():
+    def callback(outdata, frames, time, status):
+        try:
+            data = audio_queue.get_nowait()
+        except queue.Empty:
+            outdata.fill(0)  # اگر صدایی نداشتیم سکوت بفرست
+            return
+        outdata[:] = data
+
+    with sd.OutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS,
+                         dtype='int16', blocksize=FRAMES_PER_BUFFER,
+                         callback=callback):
+        print("🔊 Playing audio... (Ctrl+C to stop)")
+        threading.Event().wait()
 
 @sio.event
 def connect():
@@ -19,19 +38,15 @@ def disconnect():
 
 @sio.on("audio")
 def on_audio(data):
-    # داده باینری را به آرایه numpy تبدیل می کنیم و پخش می کنیم
-    audio = memoryview(data)
-    # پخش صدا به صورت همزمان و سریع
-    sd.play(audio, samplerate=RATE)
+    # تبدیل داده‌های بایت به numpy int16
+    audio_chunk = np.frombuffer(data, dtype='int16')
+    audio_chunk = audio_chunk.reshape(-1, CHANNELS)
+    audio_queue.put(audio_chunk)
+
+def main():
+    sio.connect("https://h-musec.onrender.com")
+    audio_playback()
+    sio.wait()
 
 if __name__ == "__main__":
-    sio.connect("https://h-musec.onrender.com")
-    print("🎧 Receiving audio... (Ctrl+C to stop)")
-    try:
-        import time
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Stopped receiving audio.")
-    finally:
-        sio.disconnect()
+    main()
