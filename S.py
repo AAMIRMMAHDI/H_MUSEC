@@ -1,50 +1,83 @@
 import socketio
 import sounddevice as sd
-import threading
+import numpy as np
 import uuid
+import time
+import threading
 
-sio = socketio.Client()
+# تنظیمات بهینه برای حداقل تأخیر
+sio = socketio.Client(reconnection_attempts=5, reconnection_delay=1)
 
-SAMPLE_RATE = 44100
+# تنظیمات صدا
+SAMPLE_RATE = 16000  # کاهش نرخ نمونه‌برداری
 CHANNELS = 1
-FRAMES_PER_BUFFER = 1024
-connected = False
+BUFFER_SIZE = 256    # بافر کوچک برای تأخیر کمتر
+AUDIO_FORMAT = 'int16'
+VOLUME = 0.8         # سطح صدا
 
-sender_id = str(uuid.uuid4())  # شناسه یکتا برای این فرستنده
+sender_id = str(uuid.uuid4())
+is_connected = False
+stream_active = False
 
-def audio_callback(indata, frames, time, status):
-    if status:
-        print(f"Status: {status}")
-    if connected:
-        sio.emit("audio", {
-            "sender_id": sender_id,
-            "audio": indata.tobytes()
+def audio_callback(indata, frames, time_info, status):
+    global stream_active
+    if not stream_active or not is_connected:
+        return
+    
+    # پردازش و فشرده‌سازی صدا
+    audio_data = (indata * VOLUME).astype(AUDIO_FORMAT)
+    chunk = audio_data.tobytes()
+    
+    try:
+        sio.emit("audio_chunk", {
+            "chunk": chunk,
+            "sender_id": sender_id
         })
+    except:
+        pass
 
-def start_audio_stream():
-    with sd.InputStream(samplerate=SAMPLE_RATE, channels=CHANNELS,
-                        dtype='int16', blocksize=FRAMES_PER_BUFFER,
-                        callback=audio_callback):
-        print("🎤 Sending audio... (Ctrl+C to stop)")
-        threading.Event().wait()
+def start_stream():
+    global stream_active
+    stream_active = True
+    print("🎤 شروع ارسال صدا با تأخیر کم... (Ctrl+C برای توقف)")
+    
+    with sd.InputStream(
+        samplerate=SAMPLE_RATE,
+        channels=CHANNELS,
+        dtype=AUDIO_FORMAT,
+        blocksize=BUFFER_SIZE,
+        callback=audio_callback
+    ):
+        while stream_active:
+            sd.sleep(100)
 
 @sio.event
 def connect():
-    global connected
-    connected = True
-    print("Connected to server")
+    global is_connected
+    is_connected = True
+    print("✓ متصل به سرور")
     sio.emit("register_sender", {"sender_id": sender_id})
 
 @sio.event
 def disconnect():
-    global connected
-    connected = False
-    print("Disconnected from server")
+    global is_connected
+    is_connected = False
+    print("✗ قطع ارتباط با سرور")
+
+@sio.on("connection_ack")
+def handle_ack(data):
+    print(f"شناسه اتصال شما: {data['sid']}")
 
 def main():
-    sio.connect("https://h-musec.onrender.com")
-    start_audio_stream()
-    sio.wait()
+    try:
+        sio.connect("https://h-musec.onrender.com", transports=['websocket'])
+        start_stream()
+    except KeyboardInterrupt:
+        print("\nقطع ارتباط...")
+    except Exception as e:
+        print(f"خطا: {str(e)}")
+    finally:
+        sio.disconnect()
 
 if __name__ == "__main__":
     main()

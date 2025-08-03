@@ -3,21 +3,36 @@ eventlet.monkey_patch()
 
 from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
+from datetime import datetime
+import time
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+socketio = SocketIO(app, 
+                   cors_allowed_origins="*", 
+                   async_mode="eventlet",
+                   ping_timeout=5,
+                   ping_interval=2,
+                   max_http_buffer_size=1e8)
 
 senders = set()
 receivers = set()
 sid_to_sender = {}
+connection_times = {}
 
 @app.route("/")
 def index():
-    return render_template("index.html", senders=list(senders), receivers=list(receivers))
+    return render_template("index.html", 
+                         senders=list(senders), 
+                         receivers=list(receivers),
+                         ar=len(senders),
+                         vr=len(receivers))
 
 @socketio.on("connect")
 def handle_connect():
-    print(f"Client connected: {request.sid}")
+    sid = request.sid
+    connection_times[sid] = time.time()
+    print(f"Client connected: {sid}")
+    emit("connection_ack", {"status": "connected", "sid": sid})
 
 @socketio.on("disconnect")
 def handle_disconnect():
@@ -26,10 +41,8 @@ def handle_disconnect():
     senders.discard(sid)
     receivers.discard(sid)
     sid_to_sender.pop(sid, None)
-    socketio.emit("update_users", {
-        "senders": list(senders),
-        "receivers": list(receivers)
-    })
+    connection_times.pop(sid, None)
+    update_clients()
 
 @socketio.on("register_sender")
 def register_sender(data):
@@ -38,29 +51,37 @@ def register_sender(data):
     senders.add(sid)
     sid_to_sender[sid] = sender_id
     print(f"Sender registered: {sid} as {sender_id}")
-    socketio.emit("update_users", {
-        "senders": list(senders),
-        "receivers": list(receivers)
-    })
+    update_clients()
 
 @socketio.on("register_receiver")
 def register_receiver():
     sid = request.sid
     receivers.add(sid)
     print(f"Receiver registered: {sid}")
-    socketio.emit("update_users", {
+    update_clients()
+
+@socketio.on("audio_chunk")
+def handle_audio_chunk(data):
+    sender_sid = request.sid
+    if sender_sid not in senders:
+        return
+        
+    # ارسال به همه گیرنده‌ها به جز خود فرستنده
+    for receiver_sid in receivers:
+        if receiver_sid != sender_sid:
+            emit("audio_stream", {
+                "chunk": data["chunk"],
+                "timestamp": time.time()
+            }, room=receiver_sid)
+
+def update_clients():
+    socketio.emit("user_update", {
+        "ar": len(senders),
+        "vr": len(receivers),
         "senders": list(senders),
-        "receivers": list(receivers)
+        "receivers": list(receivers),
+        "timestamp": datetime.now().isoformat()
     })
 
-@socketio.on("audio")
-def handle_audio(data):
-    sender_id = data.get("sender_id")
-    audio_data = data.get("audio")
-    for r_sid in receivers:
-        if sid_to_sender.get(r_sid) == sender_id:
-            continue
-        emit("audio", audio_data, room=r_sid)
-
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000)
+    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
