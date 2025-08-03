@@ -5,17 +5,17 @@ import time
 import threading
 from collections import deque
 
+# تنظیمات بهینه
+sio = socketio.Client(reconnection_attempts=5, reconnection_delay=1)
+
 # تنظیمات صدا
 SAMPLE_RATE = 16000
 CHANNELS = 1
 BUFFER_SIZE = 256
 AUDIO_FORMAT = 'int16'
-OUTPUT_VOLUME = 1.5
-BUFFER_DURATION = 0.15  # ثانیه
+MAX_BUFFER_DURATION = 0.2  # حداکثر 200ms بافر برای جبران تأخیر شبکه
 
-sio = socketio.Client(reconnection_attempts=5, reconnection_delay=1)
-
-audio_buffer = deque(maxlen=int(SAMPLE_RATE * BUFFER_DURATION / BUFFER_SIZE))
+audio_buffer = deque(maxlen=int(SAMPLE_RATE * MAX_BUFFER_DURATION / BUFFER_SIZE))
 is_playing = False
 last_chunk_time = 0
 
@@ -28,7 +28,6 @@ def audio_callback(outdata, frames, time_info, status):
     
     try:
         chunk = audio_buffer.popleft()
-        chunk = (chunk * OUTPUT_VOLUME).clip(-32768, 32767)
         outdata[:] = chunk
         last_chunk_time = time.time()
     except:
@@ -36,14 +35,6 @@ def audio_callback(outdata, frames, time_info, status):
 
 def playback_thread():
     global is_playing
-    
-    output_device = None
-    try:
-        output_devices = [d for d in sd.query_devices() if d['max_output_channels'] > 0]
-        output_device = output_devices[0]['index'] if output_devices else None
-    except:
-        pass
-
     is_playing = True
     
     with sd.OutputStream(
@@ -51,17 +42,15 @@ def playback_thread():
         channels=CHANNELS,
         dtype=AUDIO_FORMAT,
         blocksize=BUFFER_SIZE,
-        callback=audio_callback,
-        device=output_device
+        callback=audio_callback
     ):
-        print("🔊 شروع پخش صدا... (Ctrl+C برای توقف)")
-        print(f"تنظیمات: نرخ نمونه‌برداری={SAMPLE_RATE}Hz, حجم صدا={OUTPUT_VOLUME}x")
+        print("🔊 شروع پخش صدا با تأخیر کم... (Ctrl+C برای توقف)")
         while is_playing:
             sd.sleep(100)
 
 @sio.event
 def connect():
-    print("✓ متصل به سرور آنلاین")
+    print("✓ متصل به سرور")
     sio.emit("register_receiver")
 
 @sio.event
@@ -72,27 +61,18 @@ def disconnect():
 def handle_audio(data):
     try:
         chunk = np.frombuffer(data["chunk"], dtype=AUDIO_FORMAT)
-        chunk = chunk.reshape(-1, CHANNELS).astype('float32') / 32768.0
-        
-        if len(audio_buffer) == audio_buffer.maxlen:
-            audio_buffer.popleft()
-            
+        chunk = chunk.reshape(-1, CHANNELS)
         audio_buffer.append(chunk)
-        
-        latency = time.time() - data["timestamp"]
-        if latency > 0.3:
-            print(f"تأخیر شبکه: {latency:.3f} ثانیه")
-    except Exception as e:
-        print(f"خطای صدا: {str(e)}")
+    except:
+        pass
 
 @sio.on("connection_ack")
 def handle_ack(data):
-    if 'config' in data:
-        print(f"تنظیمات سرور: نرخ نمونه‌برداری {data['config']['sample_rate']}Hz")
+    print(f"شناسه اتصال شما: {data['sid']}")
 
 def main():
     try:
-        print("در حال اتصال به سرور آنلاین...")
+        # شروع پخش در یک رشته جداگانه
         play_thread = threading.Thread(target=playback_thread, daemon=True)
         play_thread.start()
         
@@ -102,7 +82,6 @@ def main():
         print("\nقطع ارتباط...")
     except Exception as e:
         print(f"خطا: {str(e)}")
-        print("مطمئن شوید سرور آنلاین فعال است و اینترنت متصل است")
     finally:
         sio.disconnect()
 

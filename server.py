@@ -5,15 +5,14 @@ from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 from datetime import datetime
 import time
-import numpy as np
 
 app = Flask(__name__)
 socketio = SocketIO(app, 
-                  cors_allowed_origins="*",
-                  async_mode="eventlet",
-                  ping_timeout=5,
-                  ping_interval=2,
-                  max_http_buffer_size=1e8)
+                   cors_allowed_origins="*", 
+                   async_mode="eventlet",
+                   ping_timeout=5,
+                   ping_interval=2,
+                   max_http_buffer_size=1e8)
 
 senders = set()
 receivers = set()
@@ -22,8 +21,8 @@ connection_times = {}
 
 @app.route("/")
 def index():
-    return render_template("index.html",
-                         senders=list(senders),
+    return render_template("index.html", 
+                         senders=list(senders), 
                          receivers=list(receivers),
                          ar=len(senders),
                          vr=len(receivers))
@@ -33,15 +32,7 @@ def handle_connect():
     sid = request.sid
     connection_times[sid] = time.time()
     print(f"Client connected: {sid}")
-    emit("connection_ack", {
-        "status": "connected",
-        "sid": sid,
-        "config": {
-            "max_volume": 2.0,
-            "sample_rate": 16000,
-            "buffer_size": 256
-        }
-    })
+    emit("connection_ack", {"status": "connected", "sid": sid})
 
 @socketio.on("disconnect")
 def handle_disconnect():
@@ -75,12 +66,12 @@ def handle_audio_chunk(data):
     if sender_sid not in senders:
         return
         
+    # ارسال به همه گیرنده‌ها به جز خود فرستنده
     for receiver_sid in receivers:
         if receiver_sid != sender_sid:
             emit("audio_stream", {
                 "chunk": data["chunk"],
-                "timestamp": time.time(),
-                "sender_id": sid_to_sender.get(sender_sid)
+                "timestamp": time.time()
             }, room=receiver_sid)
 
 def update_clients():
@@ -93,5 +84,4 @@ def update_clients():
     })
 
 if __name__ == "__main__":
-    print("Starting server on https://h-musec.onrender.com")
     socketio.run(app, host="0.0.0.0", port=5000, debug=True)
