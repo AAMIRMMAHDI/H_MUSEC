@@ -9,26 +9,21 @@ import numpy as np
 
 app = Flask(__name__)
 socketio = SocketIO(app, 
-                   cors_allowed_origins="*", 
-                   async_mode="eventlet",
-                   ping_timeout=5,
-                   ping_interval=2,
-                   max_http_buffer_size=1e8)
+                  cors_allowed_origins="*",
+                  async_mode="eventlet",
+                  ping_timeout=5,
+                  ping_interval=2,
+                  max_http_buffer_size=1e8)
 
 senders = set()
 receivers = set()
 sid_to_sender = {}
 connection_times = {}
-audio_stats = {
-    'total_chunks': 0,
-    'total_bytes': 0,
-    'last_update': time.time()
-}
 
 @app.route("/")
 def index():
-    return render_template("index.html", 
-                         senders=list(senders), 
+    return render_template("index.html",
+                         senders=list(senders),
                          receivers=list(receivers),
                          ar=len(senders),
                          vr=len(receivers))
@@ -39,11 +34,12 @@ def handle_connect():
     connection_times[sid] = time.time()
     print(f"Client connected: {sid}")
     emit("connection_ack", {
-        "status": "connected", 
+        "status": "connected",
         "sid": sid,
         "config": {
             "max_volume": 2.0,
-            "sample_rate": 16000
+            "sample_rate": 16000,
+            "buffer_size": 256
         }
     })
 
@@ -79,11 +75,6 @@ def handle_audio_chunk(data):
     if sender_sid not in senders:
         return
         
-    # آمار صدا
-    audio_stats['total_chunks'] += 1
-    audio_stats['total_bytes'] += len(data["chunk"])
-    
-    # ارسال به همه گیرنده‌ها به جز خود فرستنده
     for receiver_sid in receivers:
         if receiver_sid != sender_sid:
             emit("audio_stream", {
@@ -91,11 +82,6 @@ def handle_audio_chunk(data):
                 "timestamp": time.time(),
                 "sender_id": sid_to_sender.get(sender_sid)
             }, room=receiver_sid)
-    
-    # به‌روزرسانی آمار هر 5 ثانیه
-    if time.time() - audio_stats['last_update'] > 5:
-        print(f"Audio stats: {audio_stats['total_chunks']} chunks, {audio_stats['total_bytes']/1024:.2f} KB sent")
-        audio_stats['last_update'] = time.time()
 
 def update_clients():
     socketio.emit("user_update", {
@@ -107,4 +93,5 @@ def update_clients():
     })
 
 if __name__ == "__main__":
+    print("Starting server on https://h-musec.onrender.com")
     socketio.run(app, host="0.0.0.0", port=5000, debug=True)
