@@ -5,6 +5,7 @@ from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit
 from datetime import datetime
 import time
+import numpy as np
 
 app = Flask(__name__)
 socketio = SocketIO(app, 
@@ -18,6 +19,11 @@ senders = set()
 receivers = set()
 sid_to_sender = {}
 connection_times = {}
+audio_stats = {
+    'total_chunks': 0,
+    'total_bytes': 0,
+    'last_update': time.time()
+}
 
 @app.route("/")
 def index():
@@ -32,7 +38,14 @@ def handle_connect():
     sid = request.sid
     connection_times[sid] = time.time()
     print(f"Client connected: {sid}")
-    emit("connection_ack", {"status": "connected", "sid": sid})
+    emit("connection_ack", {
+        "status": "connected", 
+        "sid": sid,
+        "config": {
+            "max_volume": 2.0,
+            "sample_rate": 16000
+        }
+    })
 
 @socketio.on("disconnect")
 def handle_disconnect():
@@ -66,13 +79,23 @@ def handle_audio_chunk(data):
     if sender_sid not in senders:
         return
         
+    # آمار صدا
+    audio_stats['total_chunks'] += 1
+    audio_stats['total_bytes'] += len(data["chunk"])
+    
     # ارسال به همه گیرنده‌ها به جز خود فرستنده
     for receiver_sid in receivers:
         if receiver_sid != sender_sid:
             emit("audio_stream", {
                 "chunk": data["chunk"],
-                "timestamp": time.time()
+                "timestamp": time.time(),
+                "sender_id": sid_to_sender.get(sender_sid)
             }, room=receiver_sid)
+    
+    # به‌روزرسانی آمار هر 5 ثانیه
+    if time.time() - audio_stats['last_update'] > 5:
+        print(f"Audio stats: {audio_stats['total_chunks']} chunks, {audio_stats['total_bytes']/1024:.2f} KB sent")
+        audio_stats['last_update'] = time.time()
 
 def update_clients():
     socketio.emit("user_update", {
