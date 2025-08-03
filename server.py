@@ -1,15 +1,15 @@
 import eventlet
 eventlet.monkey_patch()
 
-from flask import Flask, render_template
-from flask_socketio import SocketIO, emit, request
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 senders = set()
 receivers = set()
-sid_to_sender = {}  # نگهداری شناسه یکتا برای هر ارسال‌کننده
+sid_to_sender = {}
 
 @app.route("/")
 def index():
@@ -59,7 +59,7 @@ def handle_audio(data):
     audio_data = data.get("audio")
     for r_sid in receivers:
         if sid_to_sender.get(r_sid) == sender_id:
-            continue  # به خود فرستنده ارسال نکن
+            continue
         emit("audio", audio_data, room=r_sid)
 
 if __name__ == "__main__":
