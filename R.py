@@ -17,7 +17,7 @@ def audio_playback():
         try:
             data = audio_queue.get_nowait()
         except queue.Empty:
-            outdata.fill(0)  # اگر صدایی نداشتیم سکوت بفرست
+            outdata.fill(0)
             return
         outdata[:] = data
 
@@ -38,7 +38,6 @@ def disconnect():
 
 @sio.on("audio")
 def on_audio(data):
-    # تبدیل داده‌های بایت به numpy int16
     audio_chunk = np.frombuffer(data, dtype='int16')
     audio_chunk = audio_chunk.reshape(-1, CHANNELS)
     audio_queue.put(audio_chunk)
