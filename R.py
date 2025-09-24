@@ -1,9 +1,13 @@
-import socket
+
+import socketio
 import sounddevice as sd
 import numpy as np
-import threading
 import time
+import threading
 from collections import deque
+
+# تنظیمات بهینه
+sio = socketio.Client(reconnection_attempts=5, reconnection_delay=1)
 
 # تنظیمات صدا
 SAMPLE_RATE = 16000
@@ -16,14 +20,13 @@ audio_buffer = deque(maxlen=int(SAMPLE_RATE * MAX_BUFFER_DURATION / BUFFER_SIZE)
 is_playing = False
 last_chunk_time = 0
 
-TCP_HOST = "145.223.68.97"
-TCP_PORT = 5000
-
 def audio_callback(outdata, frames, time_info, status):
     global is_playing, last_chunk_time
+    
     if not is_playing or len(audio_buffer) == 0:
         outdata.fill(0)
         return
+    
     try:
         chunk = audio_buffer.popleft()
         outdata[:] = chunk
@@ -34,6 +37,7 @@ def audio_callback(outdata, frames, time_info, status):
 def playback_thread():
     global is_playing
     is_playing = True
+    
     with sd.OutputStream(
         samplerate=SAMPLE_RATE,
         channels=CHANNELS,
@@ -45,46 +49,43 @@ def playback_thread():
         while is_playing:
             sd.sleep(100)
 
-def tcp_listener():
-    """اتصال TCP و دریافت داده‌ها"""
-    global is_playing
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((TCP_HOST, TCP_PORT))
-        print(f"✓ متصل به سرور TCP: {TCP_HOST}:{TCP_PORT}")
+@sio.event
+def connect():
+    print("✓ متصل به سرور")
+    sio.emit("register_receiver")
 
-        while is_playing:
-            data = sock.recv(4096)
-            if not data:
-                break
-            try:
-                chunk = np.frombuffer(data, dtype=AUDIO_FORMAT)
-                chunk = chunk.reshape(-1, CHANNELS)
-                audio_buffer.append(chunk)
-            except:
-                pass
-    except Exception as e:
-        print(f"✗ خطا در ارتباط TCP: {e}")
-    finally:
-        sock.close()
-        print("✗ ارتباط TCP بسته شد")
+@sio.event
+def disconnect():
+    print("✗ قطع ارتباط با سرور")
+
+@sio.on("audio_stream")
+def handle_audio(data):
+    try:
+        chunk = np.frombuffer(data["chunk"], dtype=AUDIO_FORMAT)
+        chunk = chunk.reshape(-1, CHANNELS)
+        audio_buffer.append(chunk)
+    except:
+        pass
+
+@sio.on("connection_ack")
+def handle_ack(data):
+    print(f"شناسه اتصال شما: {data['sid']}")
 
 def main():
     try:
-        # شروع پخش صدا
+        # شروع پخش در یک رشته جداگانه
         play_thread = threading.Thread(target=playback_thread, daemon=True)
         play_thread.start()
-
-        # شروع دریافت از TCP
-        tcp_thread = threading.Thread(target=tcp_listener, daemon=True)
-        tcp_thread.start()
-
+        
+        sio.connect("http://145.223.68.97:5000", transports=['websocket'])
         play_thread.join()
     except KeyboardInterrupt:
         print("\nقطع ارتباط...")
+    except Exception as e:
+        print(f"خطا: {str(e)}")
     finally:
-        global is_playing
-        is_playing = False
+        sio.disconnect()
 
 if __name__ == "__main__":
     main()
+
