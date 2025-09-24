@@ -1,81 +1,64 @@
-import eventlet
-eventlet.monkey_patch()
+import socket
+import threading
+import struct
 
-from flask import Flask, render_template, request
-from flask_socketio import SocketIO, emit
-from datetime import datetime
-import time
+HOST = "0.0.0.0"
+PORT = 5000
 
-app = Flask(__name__)
-socketio = SocketIO(app,
-                    cors_allowed_origins="*",
-                    async_mode="eventlet",
-                    ping_timeout=10,
-                    ping_interval=5,
-                    max_http_buffer_size=1e8)
+clients = []  # لیست همه گیرنده‌ها
 
-senders = {}
-receivers = set()
+def handle_client(conn, addr):
+    print(f"🟢 اتصال جدید: {addr}")
+    try:
+        while True:
+            # خواندن طول chunk (۴ بایت)
+            length_data = conn.recv(4)
+            if not length_data:
+                break
 
-@app.route("/")
-def index():
-    return render_template("index.html",
-                           senders=list(senders.values()),
-                           receivers=list(receivers),
-                           ar=len(senders),
-                           vr=len(receivers))
+            length = struct.unpack(">I", length_data)[0]
+            data = b""
+            while len(data) < length:
+                packet = conn.recv(length - len(data))
+                if not packet:
+                    break
+                data += packet
 
-@socketio.on("connect")
-def handle_connect():
-    sid = request.sid
-    print(f"🟢 Connected: {sid}")
-    emit("connection_ack", {"status": "connected", "sid": sid})
+            if not data:
+                break
 
-@socketio.on("disconnect")
-def handle_disconnect():
-    sid = request.sid
-    senders.pop(sid, None)
-    receivers.discard(sid)
-    print(f"🔴 Disconnected: {sid}")
-    update_clients()
+            # ارسال داده به تمام گیرنده‌ها به جز فرستنده
+            for c in clients:
+                if c != conn:
+                    try:
+                        c.sendall(length_data + data)
+                    except:
+                        pass
+    except Exception as e:
+        print(f"✗ خطای ارتباط با {addr}: {e}")
+    finally:
+        if conn in clients:
+            clients.remove(conn)
+        conn.close()
+        print(f"🔴 اتصال بسته شد: {addr}")
 
-@socketio.on("register_sender")
-def handle_register_sender(data):
-    sid = request.sid
-    sender_id = data.get("sender_id", sid)
-    senders[sid] = sender_id
-    print(f"🎤 Sender registered: {sender_id}")
-    update_clients()
+def main():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind((HOST, PORT))
+    server.listen(10)
+    print(f"🚀 سرور TCP در حال اجرا روی {HOST}:{PORT}")
 
-@socketio.on("register_receiver")
-def handle_register_receiver():
-    sid = request.sid
-    receivers.add(sid)
-    print(f"🎧 Receiver registered: {sid}")
-    update_clients()
-
-@socketio.on("audio_chunk")
-def handle_audio_chunk(data):
-    sender_sid = request.sid
-    chunk = data.get("chunk")
-
-    # ارسال به همه گیرنده‌ها به جز خود فرستنده
-    for receiver_sid in receivers:
-        if receiver_sid != sender_sid:
-            emit("audio_stream", {
-                "chunk": chunk,
-                "sender_id": senders.get(sender_sid, "unknown"),
-                "timestamp": time.time()
-            }, room=receiver_sid)
-
-def update_clients():
-    socketio.emit("user_update", {
-        "ar": len(senders),
-        "vr": len(receivers),
-        "senders": list(senders.values()),
-        "receivers": list(receivers),
-        "timestamp": datetime.now().isoformat()
-    })
+    try:
+        while True:
+            conn, addr = server.accept()
+            clients.append(conn)
+            thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
+            thread.start()
+    except KeyboardInterrupt:
+        print("\n⛔ سرور متوقف شد")
+    finally:
+        server.close()
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+    main()

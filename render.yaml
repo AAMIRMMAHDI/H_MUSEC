@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: voice-chat-server
-    env: python
-    plan: free
-    buildCommand: ""
-    startCommand: python server.py
-    autoDeploy: true
